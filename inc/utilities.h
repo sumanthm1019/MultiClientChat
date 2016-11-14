@@ -1,4 +1,3 @@
-#include <cstdio>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +8,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <fcntl.h>
 
 #define FRED        "\033[31m"
 #define FGREEN      "\033[32m"

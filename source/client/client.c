@@ -18,7 +18,65 @@ static int build_packet(char *cast_type, char *pkt_type, char *data);
 static int send_packet(int server_socket);
 static int recv_packet(int server_socket);
 
-using namespace std;
+
+int send_msg(int server_socket, char *msg) {
+
+	return send(server_socket, msg, strlen(msg), 0);
+
+}
+
+int send_file(int server_socket, char *file_name) {
+
+	int fd = open(file_name, O_RDWR);
+	int send_status;
+	char buffer[255];
+	char eof[10] = EOF_SEQ;
+
+	while (read(fd, buffer, 255)) {
+		send_status = send(server_socket, buffer, 255, 0);
+		if (send_status == -1)
+			ERROR("Sending file segment");
+	}
+
+	send_status = send(server_socket, eof, 10, 0);
+	if (send_status == -1)
+		ERROR("Sending EOF");
+	close(fd);
+	return 0;
+}
+
+int recv_msg(int server_socket, int len, pkt_t *packet) {
+
+	packet->data = (char *) malloc(len);
+
+	return recv(server_socket, packet->data, len, 0);
+
+}
+
+int recv_file(int server_socket, char *file_name) {
+	int fd = open(file_name, O_RDWR);
+	if(fd < 0)
+		ERROR("opening file");
+	int recv_status;
+	char buffer[255];
+	char eof[10] = EOF_SEQ;
+
+	while (1) {
+		recv_status = recv(server_socket, buffer, 255, 0);
+		if (recv_status == -1) {
+			return -1;
+		}
+		if (strncmp(eof, buffer, 10) == 0)
+			break;
+		write(fd, buffer, 255);
+
+	}
+
+	close(fd);
+	return 0;
+}
+
+
 /** @brief Accepts user input and builds the packet
  *
  */
@@ -211,72 +269,4 @@ static int recv_packet(int server_socket) {
 	return 0;
 }
 
-int send_msg(int server_socket, char *msg) {
-
-	return send(server_socket, msg, strlen(msg), 0);
-
-}
-
-int send_file(int server_socket, char *file_name) {
-
-	fstream file;
-	file.open(file_name, std::ifstream::binary);
-
-	int send_status;
-	char buffer[255];
-	char eof[10] = EOF_SEQ;
-
-	while (1) {
-		file.read(buffer, 255);
-		if (file) {
-			send_status = send(server_socket, buffer, 255, 0);
-		} else {
-			if (file.gcount() > 0) {
-				DEBUG()
-				send_status = send(server_socket, buffer, file.gcount(), 0);
-			} else {
-				DEBUG()
-				break;
-			}
-		}
-		if (send_status == -1)
-			ERROR("Sending file segment");
-	}
-
-	send_status = send(server_socket, eof, 10, 0);
-	if (send_status == -1)
-		ERROR("Sending EOF");
-	file.close();
-	return 0;
-}
-
-int recv_msg(int server_socket, int len, pkt_t *packet) {
-
-	packet->data = (char *) malloc(len);
-
-	return recv(server_socket, packet->data, len, 0);
-
-}
-
-int recv_file(int server_socket, char *file_name) {
-	fstream file;
-	file.open(file_name);
-	int recv_status;
-	char buffer[255];
-	char eof[10] = EOF_SEQ;
-
-	while (1) {
-		recv_status = recv(server_socket, buffer, 255, 0);
-		if (recv_status == -1) {
-			return -1;
-		}
-		if (strncmp(eof, buffer, 10) == 0)
-			break;
-		file.write(buffer, 255);
-
-	}
-
-	file.close();
-	return 0;
-}
 

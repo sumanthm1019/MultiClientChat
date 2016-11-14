@@ -16,7 +16,6 @@ static void insert_client(map** root, int socket, char* name);
 
 static int lookup_client(map* root, char* name);
 
-using namespace std;
 
 int recv_msg(int server_socket, int len, pkt_t *packet) {
 
@@ -27,8 +26,9 @@ int recv_msg(int server_socket, int len, pkt_t *packet) {
 }
 
 int recv_file(int server_socket, char *file_name) {
-	fstream file;
-	file.open(file_name);
+	int fd = open(file_name, O_RDWR);
+	if(fd < 0)
+		ERROR("opening file");
 	int recv_status;
 	char buffer[255];
 	char eof[10] = EOF_SEQ;
@@ -38,16 +38,39 @@ int recv_file(int server_socket, char *file_name) {
 		if (recv_status == -1) {
 			return -1;
 		}
-		printf("recevied %s\n", buffer);
 		if (strncmp(eof, buffer, 10) == 0)
 			break;
-		file.write(buffer, 255);
+		write(fd, buffer, 255);
 
 	}
 
-	file.close();
-
+	close(fd);
 	return 0;
+}
+int send_file(int server_socket, char *file_name) {
+
+	int fd = open(file_name, O_RDWR);
+	int send_status;
+	char buffer[255];
+	char eof[10] = EOF_SEQ;
+
+	while (read(fd, buffer, 255)) {
+		send_status = send(server_socket, buffer, 255, 0);
+		if (send_status == -1)
+			ERROR("Sending file segment");
+	}
+
+	send_status = send(server_socket, eof, 10, 0);
+	if (send_status == -1)
+		ERROR("Sending EOF");
+	close(fd);
+	return 0;
+}
+
+int send_msg(int server_socket, char *msg) {
+
+	return send(server_socket, msg, strlen(msg), 0);
+
 }
 
 //Insert a new client into the LinkedList data structure
