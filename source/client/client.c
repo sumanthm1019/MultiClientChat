@@ -14,7 +14,7 @@ static pkt_t server_packet;
 /** Static Local functions
  *
  */
-static int build_packet(char *cast_type, char *pkt_type, char *data);
+static int build_packet(char *cast_type, char *pkt_type, char *data, char* client_name);
 static int send_packet(int server_socket);
 static int recv_packet(int server_socket);
 
@@ -84,17 +84,19 @@ void *user_interface(void *args) {
 	char pkt_type[10];
 	char cast_type[10];
 	char text_link[100];
+	char client_name[20];
 	while (1) {
 		printf("%s:", (char *) args);
-		scanf("%s %s %s", cast_type, pkt_type, text_link);
+		printf("Please enter your request\n");
+		scanf("%s %s %s %s", cast_type, pkt_type, text_link,client_name);
 		if (cast_type == NULL || pkt_type == NULL || text_link == NULL) {
 			ERROR("Entered parameters incorrect\n");
 			printf(
-					"Usage: unicast/broadcast/blockcast message/file message-content/file-path");
+					"Usage: unicast/broadcast/blockcast message/file message-content/file-path clientName(Block/Unic)");
 			continue;
 		}
 		pthread_mutex_lock(&mutex);
-		int build_packet_status = build_packet(cast_type, pkt_type, text_link);
+		int build_packet_status = build_packet(cast_type, pkt_type, text_link,client_name);
 		if (build_packet_status != 0) {
 			ERROR("building packet!\n");
 		}
@@ -216,19 +218,21 @@ static int send_packet(int server_socket) {
 	return 0;
 }
 
-static int build_packet(char *cast_type, char *pkt_type, char *data) {
+static int build_packet(char *cast_type, char *pkt_type, char *data, char *client_name) {
 
 	if (cast_type == NULL || pkt_type == NULL || data == NULL) {
 		printf(
-				"Enter correct arguments!\n Usage <cast type> <packet type> <packet data> \n");
+				"Enter correct arguments!\n Usage <cast type> <packet type> <packet data> <client Name>\n");
 		return 1;
 	}
 	if (!strcmp(cast_type, "unicast")) {
 		client_packet.cast_type = UNICAST;
+		strcpy(client_packet.peer_name,client_name);
 	} else if (!strcmp(cast_type, "broadcast")) {
 		client_packet.cast_type = BROADCAST;
 	} else {
 		client_packet.cast_type = BLOCKCAST;
+		strcpy(client_packet.peer_name,client_name);
 	}
 	if (!strcmp(pkt_type, "message")) {
 		client_packet.pkt_type = MESSAGE;

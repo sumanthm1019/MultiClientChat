@@ -1,5 +1,6 @@
 #ifndef __CLIENT__
 #define __CLIENT__
+#include "utilities.h"
 
 int send_msg		(int socket, char *msg);
 int send_file		(int socket, char *file_name);
