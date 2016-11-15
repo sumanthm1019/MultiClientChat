@@ -26,43 +26,51 @@ int recv_msg(int server_socket, int len, pkt_t *packet) {
 }
 
 int recv_file(int server_socket, char *file_name) {
-	int fd = open(file_name, O_RDWR);
-	if(fd < 0)
-		ERROR("opening file");
-	int recv_status;
-	char buffer[255];
-	char eof[10] = EOF_SEQ;
 
-	while (1) {
-		recv_status = recv(server_socket, buffer, 255, 0);
-		if (recv_status == -1) {
+	ssize_t rcvd_bytes, rcvd_file_size = 0;
+	int recv_count = 0; /* count of recv() calls*/
+	char recv_str[MAX_RECV_BUF]; /* buffer to hold received data */
+
+	int fd = open("out.txt", O_RDWR | O_CREAT);
+
+	while ((rcvd_bytes = recv(server_socket, recv_str, MAX_RECV_BUF, 0)) > 0) {
+
+		recv_count++;
+
+		rcvd_file_size += rcvd_bytes;
+		printf("received %s\n", recv_str);
+		if (write(fd, recv_str, rcvd_bytes) < 0)
+		{
+
+			ERROR("error writing to file");
 			return -1;
+
 		}
-		if (strncmp(eof, buffer, 10) == 0)
-			break;
-		write(fd, buffer, 255);
 
 	}
 
 	close(fd);
 	return 0;
 }
-int send_file(int server_socket, char *file_name) {
+int send_file(int server_socket, char *file_name, int size) {
+
+	ssize_t read_bytes, sent_bytes, sent_file_size = 0;
+	int sent_count = 0;
 
 	int fd = open(file_name, O_RDWR);
-	int send_status;
-	char buffer[255];
-	char eof[10] = EOF_SEQ;
 
-	while (read(fd, buffer, 255)) {
-		send_status = send(server_socket, buffer, 255, 0);
-		if (send_status == -1)
+	char buffer[MAX_SEND_BUF];
+
+	while ((read_bytes = read(fd, buffer, MAX_RECV_BUF)) > 0) {
+		if ((sent_bytes = send(server_socket, buffer, read_bytes, 0))
+				< read_bytes) {
 			ERROR("Sending file segment");
+			return -1;
+		}
+		sent_count++;
+		sent_file_size += sent_bytes;
 	}
 
-	send_status = send(server_socket, eof, 10, 0);
-	if (send_status == -1)
-		ERROR("Sending EOF");
 	close(fd);
 	return 0;
 }
