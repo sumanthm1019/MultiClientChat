@@ -168,6 +168,7 @@ int main(int argc, char *argv[]) {
 			break;
 		}
 	}
+	printf("Connection established with server socekt %d\n", server_socket);
 	int send_status = send(server_socket, argv[1], strlen(argv[1]), 0);
 	if (send_status == -1) {
 		ERROR("Sending first packet!\n");
@@ -193,6 +194,7 @@ static int send_packet(int server_socket) {
 	first_packet->len = client_packet.len;
 	first_packet->pkt_type = client_packet.pkt_type;
 	first_packet->data = NULL;
+	strcpy(first_packet->peer_name,client_packet.peer_name);
 	if (client_packet.pkt_type == FILE)
 		strcpy(first_packet->file_name, client_packet.file_name);
 
@@ -225,14 +227,17 @@ static int build_packet(char *cast_type, char *pkt_type, char *data, char *clien
 				"Enter correct arguments!\n Usage <cast type> <packet type> <packet data> <client Name>\n");
 		return 1;
 	}
+
 	if (!strcmp(cast_type, "unicast")) {
 		client_packet.cast_type = UNICAST;
 		strcpy(client_packet.peer_name,client_name);
+
 	} else if (!strcmp(cast_type, "broadcast")) {
 		client_packet.cast_type = BROADCAST;
 	} else {
 		client_packet.cast_type = BLOCKCAST;
 		strcpy(client_packet.peer_name,client_name);
+
 	}
 	if (!strcmp(pkt_type, "message")) {
 		client_packet.pkt_type = MESSAGE;
@@ -247,12 +252,12 @@ static int build_packet(char *cast_type, char *pkt_type, char *data, char *clien
 
 static int recv_packet(int server_socket) {
 
+	printf("Waiting for the message\n");
 	int recv_status = recv(server_socket, &server_packet, sizeof(pkt_t), 0);
 	if (recv_status == -1) {
 		ERROR("Receiving first packet!");
 		return 1;
 	}
-
 	if (server_packet.pkt_type == MESSAGE) {
 		recv_status = recv_msg(server_socket, server_packet.len,
 				&server_packet);
@@ -260,14 +265,14 @@ static int recv_packet(int server_socket) {
 			ERROR("Receiving the message!");
 			return 1;
 		}
-		printf("%s: %s\n", server_packet.peer_name, server_packet.data);
+	printf("message received : %s \n",server_packet.data);
 	} else {
 		recv_status = recv_file(server_socket, server_packet.file_name);
 		if (recv_status == -1) {
 			ERROR("Receiving the file!");
 			return 1;
 		}
-		printf("%s: %s\n", server_packet.peer_name, server_packet.file_name);
+		//printf("%s: %s\n", server_packet.peer_name, server_packet.file_name);
 	}
 
 	return 0;
