@@ -12,36 +12,38 @@ static map *root_map;
 static pkt_t packet_buffer; //Packet which stores packet data
 
 int static global_client_id;
+
 static int recv_packet(int client_socket);
 
 static void insert_client(map** root, int socket, char* name);
 
-static int lookup_client_id(map* root, char* name);
+static int lookup_client_id( char* name);
 
-static char* lookup_client_name(map* root, int clientId);
+static char* lookup_client_name( int clientId);
 
 //Insert a new client into the LinkedList data structure
-static void insert_client(map** root_map, int socket, char* name) {
+static void insert_client(map** head, int socket, char* name) {
 
 	map* new_node = (map *) malloc(sizeof(map));
 	strcpy(new_node->name, name);
 	new_node->socket_id = socket;
+	new_node->next = NULL;
 
-	if (*root_map == NULL) {
+	if (*head == NULL) {
 		//First CLient
-		*root_map = new_node;
-		new_node->next = NULL;
+		*head = new_node;
 	} else {
 		//Else add new client and make it as root
-		new_node->next = *root_map;
-		*root_map = new_node;
+		new_node->next = *head;
+		*head = new_node;
 	}
 
 }
 
 //Given client name, lookup client_socket in the map  linklist and return
-static int lookup_client_id(map* root, char* name) {
+static int lookup_client_id( char* name) {
 
+	map *root=root_map;
 	while (root != NULL) {
 		printf("Client with Name:%s registered\n", root->name);
 		if (strcmp(root->name, name) == 0) {
@@ -56,8 +58,8 @@ static int lookup_client_id(map* root, char* name) {
 }
 
 //Given client name, lookup client_socket in the map  linklist and return
-static char* lookup_client_name(map* root, int clientId) {
-
+static char* lookup_client_name( int clientId) {
+	map *root=root_map;
 	while (root != NULL) {
 		if (root->socket_id == clientId) {
 			return root->name;
@@ -126,6 +128,12 @@ int recv_file(int client_socket, char *file_name) {
 
 static int send_packet(int client_socket) {
 
+	printf("Before send_packet \n");
+	printf("packet.cast_type %d \n",packet_buffer.cast_type);
+	printf("packet.data %s \n",packet_buffer.data);
+	printf("packet.peer_name %s \n",packet_buffer.peer_name);
+	printf("packet.pkt_type %d \n",packet_buffer.pkt_type);
+
 	pkt_t *first_packet = (pkt_t *) malloc(sizeof(pkt_t));
 
 	first_packet->cast_type = packet_buffer.cast_type;
@@ -162,43 +170,55 @@ static int send_packet(int client_socket) {
 
 	return 0;
 }
-static int server_send_packet(map* root) {
+static int server_send_packet() {
 
+	map* root =root_map;
 	pkt_t packet = packet_buffer;
 	if (root == NULL) {
 		ERROR("No client registered");
 		return 0;
 	}
 	int clientid;
+	printf("Before server_send_packet \n");
+	printf("packet.cast_type %d \n",packet.cast_type);
+	printf("packet.data %s \n",packet.data);
+	printf("packet.peer_name %s \n",packet.peer_name);
+	printf("packet.pkt_type %d \n",packet.pkt_type);
 
 	if (packet.cast_type == BROADCAST) {
+		printf("Entered BROADCAST\n");
 		while (root != NULL) {
-
-			clientid = (*root).socket_id;
-			//Skip the client which sends broadcast message
+			clientid = root->socket_id;
+			printf("clientid, global_client_id: %d,%d \n", clientid, global_client_id);
 			if (clientid == global_client_id) {
+				root = root->next;
 				continue;
+			}else{
+				send_packet(clientid);
+				root = root->next;
 			}
-			send_packet(clientid);
-			root = (*root).next;
 		}
 
 	} else if (packet.cast_type == BLOCKCAST) {
+		printf("Entered BLOCKCAST\n");
 		while (root != NULL) {
-
-			map client = *root;
-			if ((strcmp(client.name, packet.peer_name) == 0)||(clientid == global_client_id)) {
+			map* client = root;
+			printf("client.name, packet.peer_name: %s,%s \n", client->name, packet.peer_name);
+			printf("clientid, global_client_id: %d,%d \n", client->socket_id, global_client_id);
+			if ((strcmp(client->name, packet.peer_name) == 0)||(client->socket_id == global_client_id)) {
+				root = root->next;
 				continue;
+			}else{
+				clientid = root->socket_id;
+				send_packet(clientid);
+				root = root->next;
 			}
-			clientid = (*root).socket_id;
-			send_packet(clientid);
-			root = (*root).next;
 		}
 
 	} else if (packet.cast_type == UNICAST) {
-
+		printf("Entered UNICAST\n");
 		printf("unicast lookup %s \n", packet.peer_name);
-		clientid = lookup_client_id(root, packet.peer_name);
+		clientid = lookup_client_id(packet.peer_name);
 		send_packet(clientid);
 
 	}
@@ -214,7 +234,7 @@ static int recv_packet(int client_socket) {
 	}
 	printf("clientID: %d recieved first packet %d %d %d \n", client_socket,
 			packet_buffer.cast_type, packet_buffer.len, packet_buffer.pkt_type);
-	char * clientName = lookup_client_name(root_map, client_socket);
+	char * clientName = lookup_client_name( client_socket);
 	char *cast;
 	if (packet_buffer.cast_type == 0) {
 		cast = "UNICAST";
@@ -226,7 +246,7 @@ static int recv_packet(int client_socket) {
 
 	//storing the client id of the current(Used in identifying current clientID in broadcast)
 	global_client_id = client_socket;
-
+	printf("global client id %d \n", global_client_id);
 	if (packet_buffer.pkt_type == MESSAGE) {
 		recv_status = recv_msg(client_socket, packet_buffer.len,
 				&packet_buffer);
@@ -250,7 +270,7 @@ static int recv_packet(int client_socket) {
 		printf("%s: %s\n", packet_buffer.peer_name, packet_buffer.file_name);
 	}
 
-	server_send_packet(root_map);
+	server_send_packet();
 	return 0;
 }
 
@@ -269,20 +289,6 @@ void *rx_interface(void *args) {
 	return NULL;
 }
 
-void *tx_interface(void *args) {
-	map *root = (map *) args;
-	while (1) {
-		pthread_mutex_lock(&mutex);
-		pthread_cond_wait(&packet_available, &mutex);
-		int send_status = server_send_packet(root);
-		if (send_status != 0) {
-			ERROR("Sending message to server!");
-		}
-		pthread_mutex_unlock(&mutex);
-	}
-
-	return NULL;
-}
 
 int main(int argc, char *argv[]) {
 
@@ -344,7 +350,7 @@ int main(int argc, char *argv[]) {
 
 	}
 
-	pthread_join(tid[10], NULL);
+	//pthread_join(tid[10], NULL);
 	int i;
 	for (i = 0; i < tnum; i++) {
 		pthread_join(tid[tnum], NULL);

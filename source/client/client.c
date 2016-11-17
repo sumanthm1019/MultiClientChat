@@ -20,7 +20,7 @@ static int recv_packet(int server_socket);
 
 
 int send_msg(int server_socket, char *msg) {
-
+	printf("send_msg %s \n",msg);
 	return send(server_socket, msg, strlen(msg), 0);
 
 }
@@ -50,6 +50,7 @@ int recv_msg(int server_socket, int len, pkt_t *packet) {
 	packet->data = (char *) malloc(len);
 
 	return recv(server_socket, packet->data, len, 0);
+
 
 }
 
@@ -203,12 +204,21 @@ static int send_packet(int server_socket) {
 		ERROR("Sending first packet!");
 		return 1;
 	}
+	printf("client  send first packet \n");
+	printf("packet.cast_type %d \n",client_packet.cast_type);
+	printf("packet.data %s \n",client_packet.data);
+	printf("packet.peer_name %s \n",client_packet.peer_name);
+	printf("packet.pkt_type %d \n",client_packet.pkt_type);
+
+
+
 	if (client_packet.pkt_type == MESSAGE) {
 		send_status = send_msg(server_socket, (client_packet.data));
 		if (send_status == -1) {
 			ERROR("Sending main packet!");
 			return 1;
 		}
+		printf("CLIENT SENT MESSAGE ALSO %s \n",client_packet.data);
 	} else if (client_packet.pkt_type == FILE) {
 		send_status = send_file(server_socket, (client_packet.file_name));
 		if (send_status == -1) {
