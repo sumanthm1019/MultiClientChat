@@ -25,7 +25,6 @@
 #define MESSAGE   0
 #define FILE	  1
 
-#define SERVER_PORT 	(9000)
 #define MAX_NAME_LEN 	(15)
 #define MAX_RECV_BUF	(256)
 #define MAX_SEND_BUF	(256)

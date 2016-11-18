@@ -31,7 +31,7 @@ static int last_word_of(char *data, char *last)
 
 	}
 	memcpy(last, data + lastspace + 1, (i - lastspace));
-
+	data[lastspace] = '\0';
 	return 0;
 
 }
@@ -160,6 +160,7 @@ void *rx_interface(void *args) {
 		int recv_status = recv_packet(server_socket);
 		if (recv_status != 0) {
 			ERROR("Receiving message from server!");
+			exit(1);
 		}
 	}
 
@@ -170,10 +171,11 @@ int main(int argc, char *argv[]) {
 
 
 	signal(SIGINT, sig_handler);
-	if (argc != 2) {
-		printf("Usage: %s <name_of_client>\n", argv[0]);
+	if (argc != 3) {
+		printf("Usage: %s <name_of_client> <server port number> \n", argv[0]);
 		return 0;
 	}
+	int port_num = atoi(argv[2]);
 	pthread_t tid[NUM_CLIENT_THREADS];
 
 	server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -183,7 +185,7 @@ int main(int argc, char *argv[]) {
 	}
 	struct sockaddr_in server_address;
 	server_address.sin_family = AF_INET;
-	server_address.sin_port = htons(SERVER_PORT);
+	server_address.sin_port = htons(port_num);
 	server_address.sin_addr.s_addr = INADDR_ANY;
 
 	while (1) {
@@ -225,6 +227,8 @@ static int send_packet(int server_socket) {
 	if(client_packet.pkt_type == FILE)
 		strcpy(first_packet->file_name, client_packet.file_name);
 
+	if(client_packet.cast_type == UNICAST || client_packet.cast_type == BLOCKCAST)
+		strcpy(first_packet->peer_name, client_packet.peer_name);
 	int send_status = send(server_socket, first_packet, sizeof(pkt_t), 0);
 	if (send_status == -1) {
 		ERROR("Sending first packet!");
