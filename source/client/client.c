@@ -7,16 +7,40 @@
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t send_packet_signal = PTHREAD_COND_INITIALIZER;
 pthread_cond_t build_packet_signal = PTHREAD_COND_INITIALIZER;
-
+int server_socket;
 static pkt_t client_packet;
 static pkt_t server_packet;
-
+static char my_name[MAX_NAME_LEN];
 /** Static Local functions
  *
  */
-static int build_packet(char *cast_type, char *pkt_type, char *data);
+static int build_packet(char *cast_type, char *pkt_type, char *data, char *peer);
 static int send_packet(int server_socket);
 static int recv_packet(int server_socket);
+
+static int last_word_of(char *data, char *last)
+{
+	int i;
+	int lastspace = 0;
+	for(i = 0; i <strlen(data); i++)
+	{
+		if(data[i] == ' ')
+		{
+			lastspace = i;
+		}
+
+	}
+	memcpy(last, data + lastspace + 1, (i - lastspace));
+
+	return 0;
+
+}
+
+void sig_handler(int signo)
+{
+	close(server_socket);
+	exit(1);
+}
 
 int send_msg(int server_socket, char *msg) {
 
@@ -24,7 +48,7 @@ int send_msg(int server_socket, char *msg) {
 
 }
 
-int send_file(int server_socket, char *file_name, int size) {
+int send_file(int server_socket, char *file_name) {
 
 	ssize_t read_bytes, sent_bytes, sent_file_size = 0;
 	int sent_count = 0;
@@ -42,7 +66,6 @@ int send_file(int server_socket, char *file_name, int size) {
 		sent_count++;
 		sent_file_size += sent_bytes;
 	}
-
 	close(fd);
 	return 0;
 }
@@ -55,34 +78,29 @@ int recv_msg(int server_socket, int len, pkt_t *packet) {
 
 }
 
-int recv_file(int server_socket, char *file_name) {
+int recv_file(int server_socket, char *file_name, int file_size) {
 
 	ssize_t rcvd_bytes, rcvd_file_size = 0;
-	int recv_count = 0; /* count of recv() calls*/
 	char recv_str[MAX_RECV_BUF]; /* buffer to hold received data */
-
-	int fd = open(file_name, O_RDWR);
+	int fd = open(file_name, O_RDWR | O_CREAT, 0777);
 
 	while ((rcvd_bytes = recv(server_socket, recv_str, MAX_RECV_BUF, 0)) > 0) {
 
-		recv_count++;
-
 		rcvd_file_size += rcvd_bytes;
 
-		if (write(fd, recv_str, rcvd_bytes) < 0)
-
-		{
-
+		if ((write(fd, recv_str, rcvd_bytes)) < 0) {
 			ERROR("error writing to file");
 			return -1;
 
 		}
-
+		if(rcvd_file_size >= file_size)
+			break;
 	}
 
 	close(fd);
 	return 0;
 }
+
 
 /** @brief Accepts user input and builds the packet
  *
@@ -91,12 +109,13 @@ void *user_interface(void *args) {
 	char pkt_type[10];
 	char cast_type[10];
 	char text_link[100];
+	char peer_name[20];
 	char client_name[MAX_NAME_LEN];
 	strcpy(client_name, (char *)args);
 
 	while (1) {
-		printf("--%s:", client_name);
-		scanf("%s %s %s", cast_type, pkt_type, text_link);
+		printf("%s:", client_name);
+		scanf("%s %s %[^\n]s %s", cast_type, pkt_type, text_link, peer_name);
 		if (cast_type == NULL || pkt_type == NULL || text_link == NULL) {
 			ERROR("Entered parameters incorrect\n");
 			printf(
@@ -104,7 +123,7 @@ void *user_interface(void *args) {
 			continue;
 		}
 		pthread_mutex_lock(&mutex);
-		int build_packet_status = build_packet(cast_type, pkt_type, text_link);
+		int build_packet_status = build_packet(cast_type, pkt_type, text_link, peer_name);
 		if (build_packet_status != 0) {
 			ERROR("building packet!\n");
 		}
@@ -149,8 +168,8 @@ void *rx_interface(void *args) {
 
 int main(int argc, char *argv[]) {
 
-	int server_socket;
 
+	signal(SIGINT, sig_handler);
 	if (argc != 2) {
 		printf("Usage: %s <name_of_client>\n", argv[0]);
 		return 0;
@@ -176,6 +195,7 @@ int main(int argc, char *argv[]) {
 			break;
 		}
 	}
+	strcpy(my_name, argv[1]);
 	int send_status = send(server_socket, argv[1], strlen(argv[1]), 0);
 	if (send_status == -1) {
 		ERROR("Sending first packet!\n");
@@ -196,22 +216,14 @@ int main(int argc, char *argv[]) {
 static int send_packet(int server_socket) {
 
 	pkt_t *first_packet = (pkt_t *) malloc(sizeof(pkt_t));
-	int size;
+
 	first_packet->cast_type = client_packet.cast_type;
 	first_packet->len = client_packet.len;
 	first_packet->pkt_type = client_packet.pkt_type;
 	first_packet->data = NULL;
-	if (client_packet.pkt_type == FILE) {
-		struct stat st;
-		stat(client_packet.file_name, &st);
-		size = st.st_size;
-		if (size < 256)
-			client_packet.len = size;
-		else {
-			client_packet.len = 256;
-		}
+	strcpy(first_packet->sender_name, client_packet.sender_name);
+	if(client_packet.pkt_type == FILE)
 		strcpy(first_packet->file_name, client_packet.file_name);
-	}
 
 	int send_status = send(server_socket, first_packet, sizeof(pkt_t), 0);
 	if (send_status == -1) {
@@ -225,7 +237,7 @@ static int send_packet(int server_socket) {
 			return 1;
 		}
 	} else if (client_packet.pkt_type == FILE) {
-		send_status = send_file(server_socket, (client_packet.file_name), size);
+		send_status = send_file(server_socket, (client_packet.file_name));
 		if (send_status == -1) {
 			ERROR("Sending main packet!");
 			return 1;
@@ -235,27 +247,38 @@ static int send_packet(int server_socket) {
 	return 0;
 }
 
-static int build_packet(char *cast_type, char *pkt_type, char *data) {
+static int build_packet(char *cast_type, char *pkt_type, char *data, char *peer) {
 
+	struct stat stat_buf;
+	int fd;
 	if (cast_type == NULL || pkt_type == NULL || data == NULL) {
 		printf(
 				"Enter correct arguments!\n Usage <cast type> <packet type> <packet data> \n");
 		return 1;
 	}
+
 	if (!strcmp(cast_type, "unicast")) {
 		client_packet.cast_type = UNICAST;
+		last_word_of(data, peer);
+		strcpy(client_packet.peer_name, peer);
 	} else if (!strcmp(cast_type, "broadcast")) {
 		client_packet.cast_type = BROADCAST;
 	} else {
+		last_word_of(data, peer);
+		strcpy(client_packet.peer_name, peer);
 		client_packet.cast_type = BLOCKCAST;
 	}
 	if (!strcmp(pkt_type, "message")) {
 		client_packet.pkt_type = MESSAGE;
 		client_packet.len = strlen(data);
 		client_packet.data = data;
+		strcpy(client_packet.sender_name, my_name);
 	} else {
 		client_packet.pkt_type = FILE;
-
+		fd = open(data, O_RDWR);
+		fstat(fd, &stat_buf);
+		client_packet.len = stat_buf.st_size;
+		strcpy(client_packet.sender_name, my_name);
 		strcpy(client_packet.file_name, data);
 	}
 	return 0;
@@ -272,19 +295,21 @@ static int recv_packet(int server_socket) {
 	if (server_packet.pkt_type == MESSAGE) {
 		recv_status = recv_msg(server_socket, server_packet.len,
 				&server_packet);
-		if (recv_status == -1) {
+		if (recv_status <= 0) {
 			ERROR("Receiving the message!");
 			return 1;
 		}
-		printf("%s: %s\n", server_packet.peer_name, server_packet.data);
+		printf("\n%s: %s\n", server_packet.sender_name, server_packet.data);
 	} else {
-		recv_status = recv_file(server_socket, server_packet.file_name);
-		if (recv_status == -1) {
+		printf("\n%s: %s\n", server_packet.sender_name, server_packet.file_name);
+		recv_status = recv_file(server_socket, server_packet.file_name, server_packet.len);
+		if (recv_status != 0) {
 			ERROR("Receiving the file!");
 			return 1;
 		}
-		printf("%s: %s\n", server_packet.peer_name, server_packet.file_name);
 	}
+	printf("%s: ", my_name);
+	fflush(stdout);
 
 	return 0;
 }

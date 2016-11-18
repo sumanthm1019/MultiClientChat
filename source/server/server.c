@@ -8,14 +8,19 @@ pthread_cond_t packet_available = PTHREAD_COND_INITIALIZER;
 pthread_cond_t packet_slot_available = PTHREAD_COND_INITIALIZER;
 
 static map *root_map;
-int clientid;
-
+int server_socket;
 static int recv_packet(int client_socket);
 
 static void insert_client(map** root, int socket, char* name);
 
-static int lookup_client(map* root, char* name);
+/*static int lookup_client(map* root, char* name);*/
 
+
+void sig_handler(int signo)
+{
+	close(server_socket);
+	exit(1);
+}
 
 int recv_msg(int server_socket, int len, pkt_t *packet) {
 
@@ -25,34 +30,30 @@ int recv_msg(int server_socket, int len, pkt_t *packet) {
 
 }
 
-int recv_file(int server_socket, char *file_name) {
+int recv_file(int server_socket, char *file_name, int file_size) {
 
 	ssize_t rcvd_bytes, rcvd_file_size = 0;
-	int recv_count = 0; /* count of recv() calls*/
 	char recv_str[MAX_RECV_BUF]; /* buffer to hold received data */
-
-	int fd = open("out.txt", O_RDWR | O_CREAT);
+	int fd = open(file_name, O_RDWR | O_CREAT, 0777);
 
 	while ((rcvd_bytes = recv(server_socket, recv_str, MAX_RECV_BUF, 0)) > 0) {
 
-		recv_count++;
-
 		rcvd_file_size += rcvd_bytes;
-		printf("received %s\n", recv_str);
-		if (write(fd, recv_str, rcvd_bytes) < 0)
-		{
 
+		if ((write(fd, recv_str, rcvd_bytes)) < 0) {
 			ERROR("error writing to file");
 			return -1;
 
 		}
-
+		if(rcvd_file_size >= file_size)
+			break;
 	}
 
 	close(fd);
 	return 0;
 }
-int send_file(int server_socket, char *file_name, int size) {
+
+int send_file(int server_socket, char *file_name) {
 
 	ssize_t read_bytes, sent_bytes, sent_file_size = 0;
 	int sent_count = 0;
@@ -101,7 +102,7 @@ static void insert_client(map** root_map, int socket, char* name) {
 }
 
 //Given client name, lookup client_socket in the map  linklist and return
-static int lookup_client(map* root, char* name) {
+/*static int lookup_client(map* root, char* name) {
 
 	while (root != NULL) {
 		if (strcmp(root->name, name) == 0) {
@@ -113,100 +114,56 @@ static int lookup_client(map* root, char* name) {
 	printf("Client with Name:%s not connected to server", name);
 	return -1;
 
-}
+}*/
 
 static int recv_packet(int client_socket) {
 
-	pthread_mutex_lock(&buffmutex);
 	pkt_t packet;
+	int recv_status = 0;
 	if (recv(client_socket, &packet, sizeof(pkt_t), 0) == -1) {
 		ERROR("Receiving first packet!\n");
 		return 1;
 	}
 
-
 	if (packet.pkt_type == MESSAGE) {
-		recv_msg(client_socket, packet.len, &packet);
-		printf("Received: %s\n", packet.data);
+		recv_status = recv_msg(client_socket, packet.len, &packet);
+		if (recv_status < 0)
+			return 1;
+
+		printf("%s: %s\n", packet.sender_name, packet.data);
 
 	} else if (packet.pkt_type == FILE) {
-		recv_file(client_socket, packet.file_name);
-		printf("Received: %s\n", packet.file_name);
+		printf("%s: %s\n", packet.sender_name, packet.file_name);
+		recv_status = recv_file(client_socket, packet.file_name, packet.len);
+		if (recv_status < 0)
+			return 1;
 	}
 
-	pthread_cond_signal(&packet_available);
-	pthread_mutex_unlock(&buffmutex);
-
-	return 0;
-}
-static int send_packet(map* root) {
-	pthread_mutex_lock(&buffmutex);
-	pkt_t packet;
-	if (root == NULL) {
-		ERROR("No client registered");
-		return 0;
+	pkt_t first_packet;
+	first_packet.cast_type = packet.cast_type;
+	first_packet.len = packet.len;
+	first_packet.pkt_type = packet.pkt_type;
+	strcpy(first_packet.sender_name, packet.sender_name);
+	strcpy(first_packet.file_name, packet.file_name);
+	int send_status = send(client_socket, &first_packet, sizeof(pkt_t), 0);
+	if (send_status == -1) {
+		ERROR("Sending first packet!");
+		return 1;
 	}
 
 	if (packet.pkt_type == MESSAGE) {
-
-		if (packet.cast_type == BROADCAST) {
-			while (root != NULL) {
-
-				clientid = (*root).socket_id;
-				//send Message
-				root = (*root).next;
-			}
-
-		} else if (packet.cast_type == BLOCKCAST) {
-			while (root != NULL) {
-
-				map client = *root;
-				if (strcmp(client.name, packet.peer_name) == 0) {
-					continue;
-				}
-				clientid = (*root).socket_id;
-				//send Message
-				root = (*root).next;
-			}
-
-		} else if (packet.cast_type == UNICAST) {
-
-			clientid = lookup_client(root, packet.peer_name);
-			//send message
-
+		send_status = send_msg(client_socket, (packet.data));
+		if (send_status == -1) {
+			ERROR("Sending main packet!");
+			return 1;
 		}
 	} else if (packet.pkt_type == FILE) {
-
-		if (packet.cast_type == BROADCAST) {
-			while (root != NULL) {
-				//send Message
-				clientid = (*root).socket_id;
-
-				root = (*root).next;
-			}
-
-		} else if (packet.cast_type == BLOCKCAST) {
-			while (root != NULL) {
-				//send Message
-				map client = *root;
-				if (strcmp(client.name, packet.peer_name) == 0) {
-					continue;
-				}
-				clientid = (*root).socket_id;
-				root = (*root).next;
-			}
-
-		} else if (packet.cast_type == UNICAST) {
-
-			clientid = lookup_client(root, packet.peer_name);
-			//send message
-
+		send_status = send_file(client_socket, (packet.file_name));
+		if (send_status == -1) {
+			ERROR("Sending main packet!");
+			return 1;
 		}
 	}
-
-	pthread_cond_signal(&packet_available);
-	pthread_mutex_unlock(&buffmutex);
-
 	return 0;
 }
 
@@ -224,23 +181,8 @@ void *rx_interface(void *args) {
 	return NULL;
 }
 
-void *tx_interface(void *args) {
-	map *root = (map *) args;
-	while (1) {
-
-		int send_status = send_packet(root);
-		if (send_status != 0) {
-			ERROR("Sending message to server!");
-		}
-
-	}
-
-	return NULL;
-}
-
 int main(int argc, char *argv[]) {
 
-	printf("Server\n");
 
 	pthread_t tid[MAX_CLIENTS + 1]; //Initializing server threads
 
@@ -248,7 +190,7 @@ int main(int argc, char *argv[]) {
 	char CLIENT_NAME[MAX_NAME_LEN];		  //Hold Client Name for mapping
 	memset(&CLIENT_NAME, 0, sizeof(CLIENT_NAME));//Initializing 0 to avoid junk data
 
-	int server_socket;
+	signal(SIGINT, sig_handler);
 
 	server_socket = socket(PF_INET, SOCK_STREAM, 0);
 	if (server_socket == -1) {
@@ -279,14 +221,9 @@ int main(int argc, char *argv[]) {
 
 	root_map = NULL;
 
-	//Thread to send the message/file across client/s as requested.
-	//pthread_create(&tid[10], NULL, tx_interface, &root_map);
 	int client_socket;
 	//Parent Thread
 	while (1) {
-		//Initialization step
-		//Accept new client
-		//Receive Client name and map it to the client-fd
 		tnum = (tnum + 1) % MAX_CLIENTS; //Thread id
 		client_socket = accept(server_socket, NULL, NULL);
 		recv(client_socket, CLIENT_NAME, sizeof(CLIENT_NAME), 0);

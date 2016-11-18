@@ -38,4 +38,5 @@ typedef struct {
 	char *data;
 	char file_name[MAX_NAME_LEN];
 	char peer_name[MAX_NAME_LEN];
+	char sender_name[MAX_NAME_LEN];
 } pkt_t;
