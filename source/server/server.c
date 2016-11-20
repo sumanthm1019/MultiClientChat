@@ -118,6 +118,20 @@ static int lookup_client_id(char* name) {
 
 }
 
+static char* lookup_client_name(int id) {
+
+	map *root = root_map;
+	while (root != NULL) {
+		if (root->socket_id==id) {
+			return root->name;
+		} else
+			root = root->next;
+	}
+
+	return NULL;
+
+}
+
 static int send_packet(int client_socket) {
 
 	pkt_t *first_packet = (pkt_t *) malloc(sizeof(pkt_t));
@@ -211,6 +225,8 @@ static int recv_packet(int client_socket) {
 	if (recv_status == -1) {
 		ERROR("Receiving first packet!");
 		return 1;
+	}else if(recv_status==0){
+		return 1;
 	}
 
 	printf("%s ", packet_buffer.sender_name);
@@ -247,13 +263,14 @@ static int recv_packet(int client_socket) {
 
 void *rx_interface(void *args) {
 	int client_socket = *(int *) args;
+	char *name = lookup_client_name(client_socket);
 
 	while (1) {
 
 		int recv_status = recv_packet(client_socket);
 		if (recv_status != 0) {
-			ERROR("Receiving message from server!");
-			exit(1);
+			printf("client : %s  closed its connection \n",name);
+			return NULL;
 		}
 
 	}
