@@ -150,8 +150,9 @@ static int send_packet(int client_socket) {
 
 	int send_status = send(client_socket, first_packet, sizeof(pkt_t), 0);
 	if (send_status == -1) {
-		ERROR("Error: Sending first packet!");
-		exit(1);
+		ERROR("Error: Sending packet to client!");
+		close(client_socket);
+		return 1;
 	}
 
 	if (packet_buffer.pkt_type == MESSAGE) {
@@ -245,7 +246,7 @@ static int recv_packet(int client_socket) {
 			ERROR("Receiving the message!");
 			return 1;
 		}
-		printf("message - %s\n", packet_buffer.peer_name);
+		printf("message %s\n", packet_buffer.peer_name);
 	} else {
 		recv_status = recv_file(client_socket, packet_buffer.file_name, packet_buffer.len);
 		if (recv_status == -1) {
